@@ -1,0 +1,2 @@
+#e1(04Nov2026:06:06:54): source ./xcelium.d/env.d/env.history.04Nov2026_06_06_54
+s1(04Nov2026:06:06:54):  xrun -64bit -sv -nocopyright -access +rwc -licqueue -timescale 1ns/1ps -uvm -uvmhome /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2 -svseed random -status +incdir+../tb ../rtl/packet_fifo.sv ../tb/packet_if.sv ../tb/packet_uvc_pkg.sv ../tb/tb_top.sv +UVM_TESTNAME=packet_smoke_test +UVM_VERBOSITY=UVM_MEDIUM -top tb_top -input ./probe.tcl -gui -log ../logs/xrun_gui.log 

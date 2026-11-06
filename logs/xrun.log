@@ -1,0 +1,170 @@
+TOOL:	xrun(64)	25.03-s005: Started on Nov 05, 2026 at 01:34:56 PST
+xrun
+	-64bit
+	-sv
+	-nocopyright
+	-access +rwc
+	-licqueue
+	-timescale 1ns/1ps
+	-uvm
+	-uvmhome /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2
+	-svseed random
+	-status
+	+incdir+../tb
+	../rtl/packet_fifo.sv
+	../tb/packet_if.sv
+	../tb/packet_uvc_pkg.sv
+	../tb/tb_top.sv
+	+UVM_TESTNAME=packet_smoke_test
+	+UVM_VERBOSITY=UVM_MEDIUM
+	-top tb_top
+	-input ./probe.tcl
+	-log ../logs/xrun.log
+
+   User defined plus("+") options:
+	+UVM_VERBOSITY=UVM_MEDIUM
+
+Compiling UVM packages (uvm_pkg.sv cdns_uvm_pkg.sv) using uvmhome location /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2
+xmvlog: Memory Usage - Current physical: 47.4M, Current virtual: 73.0M, Peak physical: 49.5M
+xmvlog: CPU Usage - 0.1s system + 0.5s user = 0.6s total (1.2s, 52.6% cpu)
+file: ../rtl/packet_fifo.sv
+	module worklib.packet_fifo:sv
+		errors: 0, warnings: 0
+file: ../tb/packet_if.sv
+	interface worklib.packet_if:sv
+		errors: 0, warnings: 0
+file: ../tb/packet_uvc_pkg.sv
+	package worklib.packet_uvc_pkg:sv
+		errors: 0, warnings: 0
+file: ../tb/tb_top.sv
+	module worklib.tb_top:sv
+		errors: 0, warnings: 0
+xmvlog: Memory Usage - Current physical: 38.9M, Current virtual: 67.3M, Peak physical: 38.9M
+xmvlog: CPU Usage - 0.0s system + 0.0s user = 0.1s total (0.2s, 38.8% cpu)
+	Elaborating the design hierarchy:
+		Caching library 'worklib' ....... Done
+	Top level design units:
+		uvm_pkg
+		cdns_uvmapi
+		cdns_assert2uvm_pkg
+		cdns_uvm_pkg
+		packet_uvc_pkg
+		tb_top
+	Building instance overlay tables: .................... Done
+	Generating native compiled code:
+		worklib.packet_fifo:sv <0x1c46ef18>
+			streams:  21, words: 14097
+		worklib.tb_top:sv <0x17609a18>
+			streams: 722, words: 848586
+		worklib.cdns_uvm_pkg:sv <0x450ba271>
+			streams: 237, words: 376601
+		worklib.cdns_uvmapi:svp <0x014692a5>
+			streams:  27, words: 30091
+		worklib.cdns_assert2uvm_pkg:sv <0x7e809434>
+			streams:   3, words:  1700
+		worklib.uvm_pkg:sv <0x5f3e3711>
+			streams: 5298, words: 8251681
+		worklib.packet_if:sv <0x05c7805c>
+			streams:  24, words: 14546
+		worklib.packet_if:sv <0x73c8213d>
+			streams:  19, words: 12094
+	Building instance specific data structures.
+	Loading native compiled code:     .................... Done
+	Design hierarchy summary:
+		                        Instances  Unique
+		Modules:                        2       2
+		Interfaces:                     2       1
+		Verilog packages:               5       5
+		Registers:                 16,948  11,783
+		Scalar wires:                  25       -
+		Vectored wires:                 4       -
+		Named events:                   5      13
+		Always blocks:                 22      22
+		Initial blocks:               347     176
+		Clocking blocks:                4       2
+		Clocking items:                26      13
+		Parallel blocks:               27      28
+		Cont. assignments:             11      11
+		Pseudo assignments:            12       -
+		Assertions:                     6       6
+		SV Class declarations:        237     353
+		SV Class specializations:     455     455
+		Process Clocks:                 4       2
+		Simulation timescale:         1ps
+	Writing initial simulation snapshot: worklib.tb_top:sv
+xmelab: Memory Usage - Final: 98.7M, Peak: 98.7M, Peak virtual: 183.1M
+xmelab: CPU Usage - 0.3s system + 3.0s user = 3.3s total (3.7s, 91.2% cpu)
+Loading snapshot worklib.tb_top:sv .................... Done
+SVSEED set randomly from command line: 1994025730
+xcelium> source /ecad/apps4/cadence/XCELIUMMAIN25.03.005/tools/xcelium/files/xmsimrc
+xcelium> source /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/additions/sv/files/tcl/uvm_sim.tcl
+xcelium> # Create an SHM waveform database and record the complete HDL hierarchy.
+xcelium> # The run command executes the simulation after all probes are active.
+xcelium> database -open waves -shm -into waves.shm -default
+Created default SHM database waves
+xcelium> probe -create tb_top -database waves -all -depth all
+Created probe 1
+xcelium> run
+UVM_INFO /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_root.svh(412) @ 0: reporter [UVM/RELNOTES] 
+----------------------------------------------------------------
+CDNS-UVM-1.2 (25.03-s001)
+(C) 2007-2014 Mentor Graphics Corporation
+(C) 2007-2014 Cadence Design Systems, Inc.
+(C) 2006-2014 Synopsys, Inc.
+(C) 2011-2013 Cypress Semiconductor Corp.
+(C) 2013-2014 NVIDIA Corporation
+----------------------------------------------------------------
+
+  ***********       IMPORTANT RELEASE NOTES         ************
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_NO_DEPRECATED undefined.
+  See http://www.eda.org/svdb/view.php?id=3313 for more details.
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_OBJECT_DO_NOT_NEED_CONSTRUCTOR undefined.
+  See http://www.eda.org/svdb/view.php?id=3770 for more details.
+
+      (Specify +UVM_NO_RELNOTES to turn off this notice)
+
+UVM_INFO @ 0: reporter [RNTST] Running test packet_smoke_test...
+UVM_INFO ../tb/env/packet_scoreboard.sv(41) @ 85000: uvm_test_top.env.scoreboard [SCOREBOARD] Packet 0 matched
+UVM_INFO ../tb/env/packet_scoreboard.sv(41) @ 145000: uvm_test_top.env.scoreboard [SCOREBOARD] Packet 1 matched
+UVM_INFO ../tb/env/packet_scoreboard.sv(41) @ 195000: uvm_test_top.env.scoreboard [SCOREBOARD] Packet 2 matched
+UVM_INFO ../tb/env/packet_scoreboard.sv(41) @ 275000: uvm_test_top.env.scoreboard [SCOREBOARD] Packet 3 matched
+UVM_INFO ../tb/env/packet_scoreboard.sv(41) @ 325000: uvm_test_top.env.scoreboard [SCOREBOARD] Packet 4 matched
+UVM_INFO /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_objection.svh(1271) @ 325000: reporter [TEST_DONE] 'run' phase is ready to proceed to the 'extract' phase
+UVM_INFO ../tb/env/packet_scoreboard.sv(55) @ 325000: uvm_test_top.env.scoreboard [SCOREBOARD] Compared 5 packet(s)
+UVM_INFO /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_report_catcher.svh(705) @ 325000: reporter [UVM/REPORT/CATCHER] 
+--- UVM Report catcher Summary ---
+
+
+Number of demoted UVM_FATAL reports  :    0
+Number of demoted UVM_ERROR reports  :    0
+Number of demoted UVM_WARNING reports:    0
+Number of caught UVM_FATAL reports   :    0
+Number of caught UVM_ERROR reports   :    0
+Number of caught UVM_WARNING reports :    0
+
+UVM_INFO /ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_report_server.svh(851) @ 325000: reporter [UVM/REPORT/SERVER] 
+--- UVM Report Summary ---
+
+** Report counts by severity
+UVM_INFO :   10
+UVM_WARNING :    0
+UVM_ERROR :    0
+UVM_FATAL :    0
+** Report counts by id
+[RNTST]     1
+[SCOREBOARD]     6
+[TEST_DONE]     1
+[UVM/RELNOTES]     1
+[UVM/REPORT/CATCHER]     1
+
+Simulation complete via $finish(1) at time 325 NS + 62
+/ecad/apps4/cadence/XCELIUMMAIN25.03.001/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_root.svh:543     $finish;
+xcelium> exit
+xmsim: Memory Usage - Final: 136.7M, Peak: 152.1M, Peak virtual: 379.8M
+xmsim: Main Thread CPU Usage - 0.1s system + 0.2s user = 0.3s total
+xmsim: CPU Usage - 0.1s system + 0.1s user = 0.2s total (0.3s, 60.8% cpu)
+TOOL:	xrun(64)	25.03-s005: Exiting on Nov 05, 2026 at 01:35:02 PST  (total: 00:00:06)

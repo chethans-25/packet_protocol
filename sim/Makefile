@@ -42,7 +42,7 @@ ALL_SRC := $(RTL_SRC) \
 # Top and UVM test selection
 # ----------------------------------------------------------------------------
 TOP           ?= tb_top
-UVM_TEST      ?= packet_smoke_test
+UVM_TEST      ?= packet_random_test
 UVM_VERBOSITY ?= UVM_MEDIUM
 SEED          ?= random
 

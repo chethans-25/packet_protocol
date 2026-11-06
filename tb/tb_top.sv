@@ -51,7 +51,7 @@ module tb_top;
     uvm_config_db#(virtual packet_if)::set(
       null, "uvm_test_top.env.read_agent*", "vif", read_if
     );
-    run_test("packet_smoke_test");
+    run_test("packet_random_test");
   end
 
   initial begin

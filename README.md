@@ -32,9 +32,11 @@ packet_protocol/
 |   |   |-- packet_scoreboard.sv
 |   |   `-- packet_env.sv
 |   |-- sequences/
-|   |   `-- packet_smoke_sequence.sv
+|   |   |-- packet_base_sequence.sv
+|   |   `-- packet_random_sequence.sv
 |   |-- tests/
-|   |   `-- packet_smoke_test.sv
+|   |   |-- packet_base_test.sv
+|   |   `-- packet_random_test.sv
 |   |-- packet_if.sv
 |   |-- packet_uvc_pkg.sv
 |   `-- tb_top.sv
@@ -227,7 +229,7 @@ These assertions check beat-level signal usage. The UVM monitors perform the pac
 ## 5. UVM architecture
 
 ```text
-packet_smoke_test
+packet_random_test
 `-- packet_env
     |-- write_agent                         [UVM_ACTIVE]
     |   |-- sequencer
@@ -304,32 +306,57 @@ The sequencer arbitrates packet transactions and passes them from a sequence to 
 
 The parameter `packet_item` enforces the transaction type accepted by both the sequencer and driver.
 
-### 6.3 Sequence: `tb/sequences/packet_smoke_sequence.sv`
+### 6.3 Sequences
+
+#### Base sequence: `tb/sequences/packet_base_sequence.sv`
 
 ```systemverilog
-class packet_smoke_sequence extends uvm_sequence #(packet_item);
+class packet_base_sequence extends uvm_sequence #(packet_item);
 ```
 
-The smoke sequence generates the stimulus.
+`packet_base_sequence` holds behavior shared by all packet stimulus scenarios:
 
-#### Packet count
+- `packet_count`, which defaults to ten packets and can control scenario loops.
+- `packets_sent`, which counts items completed through the base send helpers.
+- `send_packet()`, which sends an item that a derived sequence has already configured.
+- `send_random_packet()`, which creates, randomizes, and sends one `packet_item`.
+
+The base sequence handles the `start_item()`/`finish_item()` handshake and common error checking. It intentionally has no `body()` implementation; each derived sequence defines its own scenario.
+
+A directed sequence can reuse it as follows:
 
 ```systemverilog
-int unsigned packet_count = 10;
+class packet_single_byte_sequence extends packet_base_sequence;
+  `uvm_object_utils(packet_single_byte_sequence)
+
+  function new(string name = "packet_single_byte_sequence");
+    super.new(name);
+  endfunction
+
+  task body();
+    packet_item item;
+    item = packet_item::type_id::create("item");
+    item.payload = new[1];
+    item.payload[0] = 8'hA5;
+    send_packet(item);
+  endtask
+endclass
 ```
 
-The default sequence sends ten packets. The test explicitly assigns the same value before starting the sequence.
+#### Random sequence: `tb/sequences/packet_random_sequence.sv`
 
-#### `body()` task
+```systemverilog
+class packet_random_sequence extends packet_base_sequence;
+```
 
-For each packet, `body()` performs the standard sequence-item handshake:
+The random sequence inherits `packet_count` and the send helpers. Its `body()` calls `send_random_packet()` once per requested packet:
 
-1. Create a `packet_item` through the UVM factory.
-2. Call `start_item(item)` to request sequencer access.
-3. Randomize the payload and its constrained length.
-4. Call `finish_item(item)` to make the completed request available to the driver.
+```systemverilog
+for (int unsigned i = 0; i < packet_count; i++)
+  send_random_packet($sformatf("item_%0d", i));
+```
 
-A randomization failure causes `UVM_FATAL` because the test cannot continue with an invalid transaction.
+Each item uses the `packet_item` constraints, so every generated packet contains between one and eight randomized bytes. The scenario-specific class remains short because the base sequence owns the reusable transaction handshake.
 
 ### 6.4 Driver: `tb/uvc/packet_driver.sv`
 
@@ -568,37 +595,37 @@ read_agent.monitor.ap.connect(scoreboard.actual_export);
 
 No direct connection exists between the driver and scoreboard. Both expected and actual streams come from interface monitors.
 
-### 6.11 Test: `tb/tests/packet_smoke_test.sv`
+### 6.11 Tests
+
+#### Base test: `tb/tests/packet_base_test.sv`
 
 ```systemverilog
-class packet_smoke_test extends uvm_test;
+class packet_base_test extends uvm_test;
 ```
 
-The test configures the reusable environment and controls simulation completion.
+`packet_base_test` owns the common testbench setup. Its `build_phase()` configures the write agent as active, configures the read agent as passive, and creates `packet_env`.
 
-#### `build_phase()`
+The reusable `run_packet_sequence()` task:
 
-Before creating the environment, the test configures:
+1. Rejects a null sequence.
+2. Saves the scoreboard comparison count before the sequence starts.
+3. Raises the run-phase objection.
+4. Starts the sequence on `env.write_agent.sequencer`.
+5. Uses the sequence's `packets_sent` count to calculate the incremental scoreboard target.
+6. Waits until the scoreboard reaches that target.
+7. Drops the objection.
 
-```text
-env.write_agent = UVM_ACTIVE
-env.read_agent  = UVM_PASSIVE
+Using the observed `packets_sent` value allows a derived sequence to send any number of packets through `send_packet()` and `send_random_packet()` without separately synchronizing an expected count. It also allows a derived test to call `run_packet_sequence()` more than once.
+
+#### Random test: `tb/tests/packet_random_test.sv`
+
+```systemverilog
+class packet_random_test extends packet_base_test;
 ```
 
-It then creates `packet_env` through the UVM factory.
+The random test inherits the environment and execution helper. Its `run_phase()` creates `packet_random_sequence`, sets `packet_count` to ten, and passes the sequence to `run_packet_sequence()`.
 
-#### `run_phase()`
-
-The test:
-
-1. Raises a phase objection to keep the run phase alive.
-2. Creates `packet_smoke_sequence`.
-3. Sets its packet count to ten.
-4. Starts it on `env.write_agent.sequencer`.
-5. Waits until the scoreboard has compared ten packets.
-6. Drops the objection, allowing UVM to enter its check and report phases.
-
-A missing output packet prevents the comparison count from reaching ten. In that case, the top-level timeout terminates the test instead of allowing it to hang indefinitely.
+New tests should normally extend `packet_base_test`, create one or more classes derived from `packet_base_sequence`, and run them through the inherited helper. A missing output packet prevents the scoreboard target from being reached; the top-level timeout then terminates the test instead of allowing it to hang indefinitely.
 
 ### 6.12 Package: `tb/packet_uvc_pkg.sv`
 
@@ -613,10 +640,12 @@ The include order follows class dependencies:
 5. Agents
 6. Scoreboard
 7. Environment
-8. Sequence
-9. Test
+8. Base sequence
+9. Derived random sequence
+10. Base test
+11. Derived random test
 
-`tb_top.sv` imports this package to make `packet_smoke_test` and all supporting types available.
+`tb_top.sv` imports this package to make `packet_random_test` and all supporting types available.
 
 ### 6.13 Top-level testbench: `tb/tb_top.sv`
 
@@ -686,20 +715,20 @@ The wildcard lets each agent and its child components retrieve the appropriate `
 #### Starting UVM
 
 ```systemverilog
-run_test("packet_smoke_test");
+run_test("packet_random_test");
 ```
 
-This asks the UVM factory to create and run `packet_smoke_test`.
+This asks the UVM factory to create and run `packet_random_test`.
 
 #### Timeout
 
-A 10 microsecond timeout issues `UVM_FATAL` if the test does not finish. Normal smoke-test execution completes in well under this limit.
+A 10 microsecond timeout issues `UVM_FATAL` if the test does not finish. Normal random-test execution completes in well under this limit.
 
 ## 7. End-to-end packet flow
 
 For one randomized packet, the complete flow is:
 
-1. `packet_smoke_sequence` creates and randomizes a `packet_item`.
+1. `packet_random_sequence` creates and randomizes a `packet_item`.
 2. `packet_sequencer` makes the item available to `packet_driver`.
 3. The driver receives the item with `get_next_item()`.
 4. The driver presents one payload byte per cycle on `write_if`.
@@ -774,7 +803,7 @@ The generated `work` directory, `transcript`, and ModelSim/Questa initialization
 The important runtime hierarchy is:
 
 ```text
-uvm_test_top                         packet_smoke_test
+uvm_test_top                         packet_random_test (extends packet_base_test)
 `-- env                              packet_env
     |-- write_agent                  packet_write_agent
     |   |-- sequencer                packet_sequencer
