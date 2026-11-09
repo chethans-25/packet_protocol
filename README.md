@@ -23,11 +23,11 @@ packet_protocol/
 |-- tb/
 |   |-- uvc/
 |   |   |-- packet_item.sv
+|   |   |-- packet_agent_config.sv
 |   |   |-- packet_sequencer.sv
 |   |   |-- packet_driver.sv
-|   |   |-- packet_write_monitor.sv
-|   |   |-- packet_read_monitor.sv
-|   |   `-- packet_agents.sv
+|   |   |-- packet_monitor.sv
+|   |   `-- packet_agent.sv
 |   |-- env/
 |   |   |-- packet_scoreboard.sv
 |   |   `-- packet_env.sv
@@ -243,9 +243,12 @@ packet_random_test
                      actual packet
 ```
 
-The write agent is active because it generates and drives traffic. Its monitor independently observes accepted writes and creates the expected packet stream.
+Both `write_agent` and `read_agent` are instances of the same `packet_agent` class. Their `packet_agent_config` objects select different behavior:
 
-The read agent is passive because it only observes DUT output. It contains no sequencer or driver. Since a passive component cannot drive `rd_en`, `tb_top.sv` ties the read-side `rd_en` signal high. The FIFO output is therefore consumed whenever `out_valid` is high.
+- `write_agent`: `UVM_ACTIVE` and `PACKET_WRITE_SIDE`. It creates a sequencer, driver, and shared monitor.
+- `read_agent`: `UVM_PASSIVE` and `PACKET_READ_SIDE`. It creates only the shared monitor.
+
+The monitor uses the role enum to sample `wr_en && valid` on the write side or `rd_en && valid` on the read side. Since the passive read instance cannot drive `rd_en`, `tb_top.sv` ties it high. The FIFO output is consumed whenever `out_valid` is high.
 
 The scoreboard compares complete packets in FIFO order. It does not predict internal FIFO cycle timing; it checks packet content and ordering.
 
@@ -438,94 +441,50 @@ Both monitors sample through `mon_cb`. The `#1step` input skew samples values im
 
 The driver does not use a clocking block. It drives directly at the falling edge, half a clock period before DUT sampling.
 
-### 6.6 Write monitor: `tb/uvc/packet_write_monitor.sv`
+### 6.6 Agent configuration: `tb/uvc/packet_agent_config.sv`
 
-The write monitor observes accepted input beats and reconstructs complete expected packets.
+`packet_agent_config` configures one `packet_agent` instance. It contains:
 
-#### Analysis port
+- `is_active`: UVM's `UVM_ACTIVE` or `UVM_PASSIVE` enum. The agent copies this value into its inherited `uvm_agent.is_active` field, so `get_is_active()` and UVM topology/introspection agree.
+- `role`: `PACKET_WRITE_SIDE` or `PACKET_READ_SIDE`.
+- `vif`: the physical `packet_if` used by that instance.
 
-```systemverilog
-uvm_analysis_port #(packet_item) ap;
-```
+Activity and role are separate decisions. Activity controls which components the agent creates. Role controls which transfer enable the shared monitor observes.
 
-An analysis port broadcasts completed packets without blocking the monitor. The environment connects this port to the scoreboard's expected-packet implementation.
+### 6.7 Shared monitor: `tb/uvc/packet_monitor.sv`
 
-#### State
+Both agent instances create the same `packet_monitor` class. The monitor gets `packet_agent_config` from `uvm_config_db` and samples through `cfg.vif.mon_cb`.
 
-- `current_packet` stores the packet currently being assembled.
-- `collecting` indicates whether an SOP has already started a packet.
-
-#### Sampling condition
-
-The monitor accepts a write beat when:
+The role selects the transfer condition:
 
 ```systemverilog
-vif.mon_cb.wr_en && vif.mon_cb.valid
+if (cfg.role == PACKET_WRITE_SIDE)
+  transfer = cfg.vif.mon_cb.wr_en && cfg.vif.mon_cb.valid;
+else
+  transfer = cfg.vif.mon_cb.rd_en && cfg.vif.mon_cb.valid;
 ```
 
-Reset clears partial monitor state.
+After detecting a transfer, the monitor uses shared SOP/EOP reconstruction logic:
 
-#### Packet reconstruction
+1. SOP creates an empty `packet_item` and starts collection.
+2. Each transferred data byte is appended to the payload.
+3. EOP publishes the complete packet through `ap`.
+4. Nested SOP or a beat without a preceding SOP produces a role-specific protocol error.
+5. Reset discards any partially collected packet.
 
-`sample_beat()` behaves as follows:
+The environment connects the write-agent monitor to the expected scoreboard input and the read-agent monitor to the actual scoreboard input.
 
-1. On SOP, create an empty `packet_item` and begin collecting.
-2. If SOP arrives while already collecting, report `WRITE_PROTOCOL` because the previous packet had no EOP.
-3. If a non-SOP beat arrives while no packet is active, report `WRITE_PROTOCOL` because data appeared before SOP.
-4. Append the sampled data byte to the dynamic payload array.
-5. On EOP, write the complete packet through `ap`, clear `collecting`, and release `current_packet`.
+### 6.8 Agent: `tb/uvc/packet_agent.sv`
 
-The write monitor derives expected data from actual accepted interface traffic rather than directly from the sequence. This checks the sequence-to-driver serialization path as well as the DUT.
+The file defines one reusable `packet_agent` class. Every instance retrieves a `packet_agent_config` and always creates `packet_monitor`.
 
-### 6.7 Read monitor: `tb/uvc/packet_read_monitor.sv`
-
-The read monitor reconstructs complete packets from the DUT output. Its structure mirrors the write monitor.
-
-#### Sampling condition
-
-A read beat is consumed and sampled when:
-
-```systemverilog
-vif.mon_cb.rd_en && vif.mon_cb.valid
-```
-
-Since `tb_top` ties `read_if.rd_en` high, every valid output beat is consumed.
-
-#### Protocol checking
-
-The monitor reports `READ_PROTOCOL` when:
-
-- SOP arrives before the previous packet reached EOP.
-- An accepted output beat arrives without an active packet and without SOP.
-
-On EOP, the completed packet is broadcast through `ap` as an actual packet for the scoreboard.
-
-### 6.8 Agents: `tb/uvc/packet_agents.sv`
-
-This file defines separate write and read agents.
-
-#### `packet_write_agent`
-
-The write agent always creates its monitor. If configured as `UVM_ACTIVE`, it also creates:
-
-- `packet_sequencer`
-- `packet_driver`
-
-During `connect_phase`, it connects:
+When `get_is_active() == UVM_ACTIVE`, the agent also creates `packet_sequencer` and `packet_driver`, then connects:
 
 ```text
 driver.seq_item_port -> sequencer.seq_item_export
 ```
 
-This TLM connection lets the driver request packets from sequences running on the sequencer.
-
-Keeping the monitor present in active and passive modes allows the same write agent to be reused for either stimulus generation or observation.
-
-#### `packet_read_agent`
-
-The read agent creates only `packet_read_monitor`. It has no read driver or sequencer in this skeleton, so it is used as a passive output observer.
-
-To test randomized output backpressure in a larger environment, this agent could be extended with a driver that controls `rd_en`.
+When `cfg.is_active == UVM_PASSIVE`, the sequencer and driver are not created. The current driver supports only `PACKET_WRITE_SIDE`; an active read-side configuration produces a fatal configuration error rather than driving the wrong signals.
 
 ### 6.9 Scoreboard: `tb/env/packet_scoreboard.sv`
 
@@ -603,7 +562,9 @@ No direct connection exists between the driver and scoreboard. Both expected and
 class packet_base_test extends uvm_test;
 ```
 
-`packet_base_test` owns the common testbench setup. Its `build_phase()` configures the write agent as active, configures the read agent as passive, and creates `packet_env`.
+`packet_base_test` owns the common testbench setup. Its `build_phase()` retrieves `write_vif` and `read_vif`, creates the two `packet_agent_config` objects, and creates `packet_env`.
+
+The write configuration selects `UVM_ACTIVE` with `PACKET_WRITE_SIDE`. The read configuration selects `UVM_PASSIVE` with `PACKET_READ_SIDE`. Both environment children are instances of the same `packet_agent` class.
 
 The reusable `run_packet_sequence()` task:
 
@@ -634,16 +595,17 @@ New tests should normally extend `packet_base_test`, create one or more classes 
 The include order follows class dependencies:
 
 1. Transaction item
-2. Sequencer
-3. Driver
-4. Monitors
-5. Agents
-6. Scoreboard
-7. Environment
-8. Base sequence
-9. Derived random sequence
-10. Base test
-11. Derived random test
+2. Agent role enum and configuration object
+3. Sequencer
+4. Driver
+5. Shared monitor
+6. Configurable agent
+7. Scoreboard
+8. Environment
+9. Base sequence
+10. Derived random sequence
+11. Base test
+12. Derived random test
 
 `tb_top.sv` imports this package to make `packet_random_test` and all supporting types available.
 
@@ -701,16 +663,23 @@ assign write_if.rd_en = 1'b0;
 
 Because the DUT reset is synchronous, reset takes effect on rising edges while `rst` is high.
 
-#### Virtual-interface configuration
+#### Virtual-interface and agent configuration
 
-Before calling `run_test`, the top stores both interface handles in `uvm_config_db`:
+Before calling `run_test`, the top stores the physical interface handles for `packet_base_test`:
 
 ```text
-write_if -> uvm_test_top.env.write_agent*
-read_if  -> uvm_test_top.env.read_agent*
+write_if -> uvm_test_top.write_vif
+read_if  -> uvm_test_top.read_vif
 ```
 
-The wildcard lets each agent and its child components retrieve the appropriate `vif` handle.
+The base test creates:
+
+```text
+write_cfg = UVM_ACTIVE  + PACKET_WRITE_SIDE + write_vif
+read_cfg  = UVM_PASSIVE + PACKET_READ_SIDE  + read_vif
+```
+
+It publishes each `packet_agent_config` to the corresponding environment agent. Each agent then supplies its configuration to its shared monitor and, for the active write instance, its driver.
 
 #### Starting UVM
 
@@ -733,11 +702,11 @@ For one randomized packet, the complete flow is:
 3. The driver receives the item with `get_next_item()`.
 4. The driver presents one payload byte per cycle on `write_if`.
 5. On every rising edge with `wr_en && valid`, the DUT stores `{sop, eop, data}`.
-6. `packet_write_monitor` observes the same accepted input beats and rebuilds the expected packet.
-7. On input EOP, the write monitor sends the expected packet to the scoreboard.
+6. The `PACKET_WRITE_SIDE` instance of `packet_monitor` observes the same input transfers and rebuilds the expected packet.
+7. On input EOP, that monitor sends the expected packet to the scoreboard.
 8. Because `read_if.rd_en` is high, the DUT emits and consumes stored beats whenever its output is valid.
-9. `packet_read_monitor` observes `rd_en && valid` and rebuilds the actual packet.
-10. On output EOP, the read monitor sends the actual packet to the scoreboard.
+9. The `PACKET_READ_SIDE` instance of `packet_monitor` observes `rd_en && valid` and rebuilds the actual packet.
+10. On output EOP, that monitor sends the actual packet to the scoreboard.
 11. The scoreboard removes the oldest expected packet and compares its length and every byte against the actual packet.
 12. After ten comparisons, the test drops its objection. UVM executes `check_phase` and `report_phase`, prints its summary, and ends simulation.
 
@@ -805,12 +774,12 @@ The important runtime hierarchy is:
 ```text
 uvm_test_top                         packet_random_test (extends packet_base_test)
 `-- env                              packet_env
-    |-- write_agent                  packet_write_agent
+    |-- write_agent                  packet_agent
     |   |-- sequencer                packet_sequencer
     |   |-- driver                   packet_driver
-    |   `-- monitor                  packet_write_monitor
-    |-- read_agent                   packet_read_agent
-    |   `-- monitor                  packet_read_monitor
+    |   `-- monitor                  packet_monitor
+    |-- read_agent                   packet_agent
+    |   `-- monitor                  packet_monitor
     `-- scoreboard                   packet_scoreboard
 ```
 
@@ -842,6 +811,9 @@ Common extensions include:
 ## 12. Key points for new readers
 
 - A `packet_item` is a complete packet; an RTL FIFO entry is one packet beat.
+- Both `write_agent` and `read_agent` instantiate the same `packet_agent` class.
+- `packet_agent_config.is_active` controls whether the sequencer and driver are created.
+- `packet_agent_config.role` controls whether the monitor samples write or read transfers.
 - The driver serializes one transaction into several clock cycles.
 - SOP and EOP are stored in the FIFO with each data beat.
 - The write monitor generates expected packets from observed input traffic.

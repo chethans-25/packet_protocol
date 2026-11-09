@@ -46,10 +46,10 @@ module tb_top;
 
   initial begin
     uvm_config_db#(virtual packet_if)::set(
-      null, "uvm_test_top.env.write_agent*", "vif", write_if
+      null, "uvm_test_top", "write_vif", write_if
     );
     uvm_config_db#(virtual packet_if)::set(
-      null, "uvm_test_top.env.read_agent*", "vif", read_if
+      null, "uvm_test_top", "read_vif", read_if
     );
     run_test("packet_random_test");
   end

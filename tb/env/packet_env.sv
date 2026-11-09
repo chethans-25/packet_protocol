@@ -1,9 +1,9 @@
 class packet_env extends uvm_env;
   `uvm_component_utils(packet_env)
 
-  packet_write_agent write_agent;
-  packet_read_agent  read_agent;
-  packet_scoreboard  scoreboard;
+  packet_agent      write_agent;
+  packet_agent      read_agent;
+  packet_scoreboard scoreboard;
 
   function new(string name = "packet_env", uvm_component parent = null);
     super.new(name, parent);
@@ -11,8 +11,8 @@ class packet_env extends uvm_env;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    write_agent = packet_write_agent::type_id::create("write_agent", this);
-    read_agent  = packet_read_agent::type_id::create("read_agent", this);
+    write_agent = packet_agent::type_id::create("write_agent", this);
+    read_agent  = packet_agent::type_id::create("read_agent", this);
     scoreboard  = packet_scoreboard::type_id::create("scoreboard", this);
   endfunction
 

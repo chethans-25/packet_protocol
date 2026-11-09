@@ -1,6 +1,7 @@
 class packet_driver extends uvm_driver #(packet_item);
   `uvm_component_utils(packet_driver)
 
+  packet_agent_config cfg;
   virtual packet_if vif;
 
   function new(string name = "packet_driver", uvm_component parent = null);
@@ -9,8 +10,17 @@ class packet_driver extends uvm_driver #(packet_item);
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(virtual packet_if)::get(this, "", "vif", vif))
-      `uvm_fatal("NO_VIF", {get_full_name(), ": packet_if was not configured"})
+    if (!uvm_config_db#(packet_agent_config)::get(this, "", "cfg", cfg))
+      `uvm_fatal("NO_CFG", {get_full_name(), ": packet_agent_config was not configured"})
+    if (cfg.vif == null)
+      `uvm_fatal("NO_VIF", {get_full_name(), ": cfg.vif is null"})
+    if (cfg.is_active != UVM_ACTIVE)
+      `uvm_fatal("PASSIVE_DRIVER",
+                 "packet_driver requires an active agent configuration")
+    if (cfg.role != PACKET_WRITE_SIDE)
+      `uvm_fatal("UNSUPPORTED_ROLE",
+                 "packet_driver currently supports only PACKET_WRITE_SIDE")
+    vif = cfg.vif;
   endfunction
 
   task run_phase(uvm_phase phase);

@@ -1,3 +1,7 @@
 .vscode
 .gitignore
 work/
+# Questa/ModelSim simulation artifacts
+*.wlf
+transcript
+modelsim.ini_new

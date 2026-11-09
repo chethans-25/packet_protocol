@@ -20,20 +20,22 @@ The design uses a simple packet protocol with these signals:
 ```mermaid
 flowchart LR
     subgraph UVM_TEST["UVM Test hierarchy"]
-        BASE_TEST["packet_base_test<br/>Creates packet_env<br/>Configures agent modes<br/>Runs packet sequences<br/>Controls objections"]
+        BASE_TEST["packet_base_test<br/>Creates packet_agent_config objects<br/>Creates packet_env<br/>Runs packet sequences<br/>Controls objections"]
         TEST["packet_random_test<br/>extends packet_base_test<br/>Creates the random sequence"]
         BASE_SEQ["packet_base_sequence<br/>packet_count / packets_sent<br/>send_packet()<br/>send_random_packet()"]
         SEQ["packet_random_sequence<br/>extends packet_base_sequence<br/>Defines randomized packet scenario"]
+        WCFG["write_cfg<br/>UVM_ACTIVE<br/>PACKET_WRITE_SIDE<br/>write_vif"]
+        RCFG["read_cfg<br/>UVM_PASSIVE<br/>PACKET_READ_SIDE<br/>read_vif"]
 
         subgraph ENV["packet_env"]
-            subgraph WRITE_AGENT["packet_write_agent — UVM_ACTIVE"]
+            subgraph WRITE_AGENT["write_agent : packet_agent<br/>UVM_ACTIVE / PACKET_WRITE_SIDE"]
                 SQR["packet_sequencer"]
                 DRV["packet_driver"]
-                WMON["packet_write_monitor"]
+                WMON["packet_monitor"]
             end
 
-            subgraph READ_AGENT["packet_read_agent — UVM_PASSIVE"]
-                RMON["packet_read_monitor"]
+            subgraph READ_AGENT["read_agent : packet_agent<br/>UVM_PASSIVE / PACKET_READ_SIDE"]
+                RMON["packet_monitor"]
             end
 
             SB["packet_scoreboard<br/>expected_queue<br/>Packet length/data comparison"]
@@ -62,6 +64,10 @@ flowchart LR
 
     BASE_TEST -.->|"inherits"| TEST
     BASE_SEQ -.->|"inherits"| SEQ
+    BASE_TEST -->|"configures"| WCFG
+    BASE_TEST -->|"configures"| RCFG
+    WCFG --> WRITE_AGENT
+    RCFG --> READ_AGENT
     TEST -->|"creates and passes to inherited helper"| SEQ
     SEQ -->|"packet_item requests"| SQR
     SQR -->|"seq_item_export → seq_item_port"| DRV
@@ -126,14 +132,14 @@ The same architecture is shown below for Markdown viewers that do not render Mer
 |              v                                                                 |
 |  +------------------------- packet_env -------------------------------------+  |
 |  |                                                                         |  |
-|  |  +------------- packet_write_agent (ACTIVE) -------------------------+ |  |
+|  |  +------------- packet_agent (ACTIVE) -------------------------+ |  |
 |  |  |                                                                   | |  |
 |  |  |  +------------------+      +------------------+                    | |  |
 |  |  |  | packet_sequencer |----->| packet_driver    |                    | |  |
 |  |  |  +------------------+ TLM  +---------+--------+                    | |  |
 |  |  |                                      | drive                       | |  |
 |  |  |  +----------------------+            |                             | |  |
-|  |  |  | packet_write_monitor |<-----------+-- observes write_if         | |  |
+|  |  |  | packet_monitor |<-----------+-- observes write_if         | |  |
 |  |  |  +-----------+----------+                                          | |  |
 |  |  +--------------|-----------------------------------------------------+ |  |
 |  |                 | expected packet                                       |  |
@@ -146,9 +152,9 @@ The same architecture is shown below for Markdown viewers that do not render Mer
 |  |          +----------+---------+                                          |  |
 |  |                     ^ actual packet                                      |  |
 |  |                     |                                                    |  |
-|  |  +------------- packet_read_agent (PASSIVE) -------------------------+  |  |
+|  |  +------------- packet_agent (PASSIVE) -------------------------+  |  |
 |  |  |  +---------------------+                                           |  |  |
-|  |  |  | packet_read_monitor |<--------- observes read_if                |  |  |
+|  |  |  | packet_monitor |<--------- observes read_if                |  |  |
 |  |  |  +---------------------+                                           |  |  |
 |  |  +--------------------------------------------------------------------+  |  |
 |  +-------------------------------------------------------------------------+  |
@@ -200,8 +206,8 @@ The interfaces have the same signal declarations but different roles:
 
 | Interface | Role | Primary signal driver | Monitor |
 |---|---|---|---|
-| `write_if` | DUT input interface | `packet_driver` | `packet_write_monitor` |
-| `read_if` | DUT output interface | `packet_fifo` | `packet_read_monitor` |
+| `write_if` | DUT input interface | `packet_driver` | `packet_monitor` |
+| `read_if` | DUT output interface | `packet_fifo` | `packet_monitor` |
 
 Because the read agent is passive, `tb_top` keeps the output consumer enabled:
 
@@ -241,24 +247,33 @@ Inheritance and runtime hierarchy:
 packet_base_test
 `-- packet_random_test                         instantiated as uvm_test_top
     `-- env                                    packet_env
-        |-- write_agent                        packet_write_agent
+        |-- write_agent                        packet_agent
         |   |-- sequencer                      packet_sequencer
         |   |-- driver                         packet_driver
-        |   `-- monitor                        packet_write_monitor
-        |-- read_agent                         packet_read_agent
-        |   `-- monitor                        packet_read_monitor
+        |   `-- monitor                        packet_monitor
+        |-- read_agent                         packet_agent
+        |   `-- monitor                        packet_monitor
         `-- scoreboard                         packet_scoreboard
 
 packet_base_sequence
 `-- packet_random_sequence                     runs on write_agent.sequencer
 ```
 
-The test configures the agent modes before creating the environment:
+The base test configures two instances of the same agent class before creating the environment:
 
 ```text
-env.write_agent = UVM_ACTIVE
-env.read_agent  = UVM_PASSIVE
+write_agent : packet_agent
+  write_cfg.is_active = UVM_ACTIVE
+  write_cfg.role      = PACKET_WRITE_SIDE
+  write_cfg.vif       = write_vif
+
+read_agent : packet_agent
+  read_cfg.is_active  = UVM_PASSIVE
+  read_cfg.role       = PACKET_READ_SIDE
+  read_cfg.vif        = read_vif
 ```
+
+Each instance always creates `packet_monitor`. Only the active write instance creates `packet_sequencer` and `packet_driver`.
 
 ## 6. Stimulus path
 
@@ -313,7 +328,7 @@ write_if.mon_cb
     |
     | write request: wr_en && valid
     v
-packet_write_monitor
+packet_monitor
     |
     | reconstruct packet from SOP through EOP
     v
@@ -347,7 +362,7 @@ read_if.mon_cb
     |
     | consumed beat: rd_en && valid
     v
-packet_read_monitor
+packet_monitor
     |
     | reconstruct packet from SOP through EOP
     v
@@ -410,26 +425,32 @@ write_if.rst <= 1'b0;
 
 `read_if.rst` is connected to the same reset source. Both monitors sample through `mon_cb` at `posedge clk` with `#1step` input skew. During reset, each monitor discards any partially collected packet.
 
-## 11. Virtual-interface connections
+## 11. Agent configuration and virtual-interface connections
 
-`tb_top` registers each physical interface in `uvm_config_db` before starting UVM:
+`tb_top` registers the two physical interfaces for the base test before starting UVM:
 
 ```systemverilog
 uvm_config_db#(virtual packet_if)::set(
-  null, "uvm_test_top.env.write_agent*", "vif", write_if
+  null, "uvm_test_top", "write_vif", write_if
 );
 
 uvm_config_db#(virtual packet_if)::set(
-  null, "uvm_test_top.env.read_agent*", "vif", read_if
+  null, "uvm_test_top", "read_vif", read_if
 );
 ```
 
-The configuration paths provide:
+`packet_base_test` retrieves these handles, creates `write_cfg` and `read_cfg`, and sets each `packet_agent_config` on its agent instance:
 
-- `write_if` to the write agent's driver and monitor.
-- `read_if` to the read agent's monitor.
+```systemverilog
+uvm_config_db#(packet_agent_config)::set(
+  this, "env.write_agent", "cfg", write_cfg
+);
+uvm_config_db#(packet_agent_config)::set(
+  this, "env.read_agent", "cfg", read_cfg
+);
+```
 
-The wildcard allows child components under each agent to retrieve the same interface using the `vif` field name.
+Each `packet_agent` passes the same configuration object to the components it creates. The active write driver and monitor therefore use `write_if`; the passive read monitor uses `read_if`.
 
 ## 12. End-to-end packet flow
 
@@ -461,14 +482,15 @@ For each packet, the architecture operates as follows:
 | `packet_sequencer` | `packet_driver` | Sequencer-driver TLM | Complete packet transaction |
 | `packet_driver` | `write_if` | Virtual interface | SOP, EOP, valid, data, write enable |
 | `write_if` | `packet_fifo` | HDL port connection | DUT input packet beats |
-| `write_if.mon_cb` | `packet_write_monitor` | Virtual-interface sampling | Accepted input beats |
-| `packet_write_monitor.ap` | `scoreboard.expected_export` | UVM analysis TLM | Expected complete packets |
+| `write_if.mon_cb` | `packet_monitor` | Virtual-interface sampling | Accepted input beats |
+| `packet_monitor.ap` | `scoreboard.expected_export` | UVM analysis TLM | Expected complete packets |
 | `packet_fifo` | `read_if` | HDL port connection | DUT output packet beats |
 | `tb_top` | `read_if.rd_en` | Continuous assignment | Permanent output read enable |
-| `read_if.mon_cb` | `packet_read_monitor` | Virtual-interface sampling | Consumed output beats |
-| `packet_read_monitor.ap` | `scoreboard.actual_export` | UVM analysis TLM | Actual complete packets |
+| `read_if.mon_cb` | `packet_monitor` | Virtual-interface sampling | Consumed output beats |
+| `packet_monitor.ap` | `scoreboard.actual_export` | UVM analysis TLM | Actual complete packets |
 | `packet_scoreboard.compared_packets` | `packet_base_test.run_packet_sequence()` | Shared component state/wait | Test completion condition |
-| `tb_top` | Both agents | `uvm_config_db` | Virtual-interface handles |
+| `tb_top` | `packet_base_test` | `uvm_config_db` | `write_vif` and `read_vif` handles |
+| `packet_base_test` | Both `packet_agent` instances | `packet_agent_config` | Activity, role, and virtual interface |
 
 ## 14. Source-file ownership
 
@@ -479,9 +501,9 @@ For each packet, the architecture operates as follows:
 | Transaction | `tb/uvc/packet_item.sv` |
 | Sequencer | `tb/uvc/packet_sequencer.sv` |
 | Driver | `tb/uvc/packet_driver.sv` |
-| Write monitor | `tb/uvc/packet_write_monitor.sv` |
-| Read monitor | `tb/uvc/packet_read_monitor.sv` |
-| Active and passive agents | `tb/uvc/packet_agents.sv` |
+| Agent configuration and role enum | `tb/uvc/packet_agent_config.sv` |
+| Shared write/read monitor | `tb/uvc/packet_monitor.sv` |
+| Configurable active/passive agent | `tb/uvc/packet_agent.sv` |
 | Scoreboard | `tb/env/packet_scoreboard.sv` |
 | Environment | `tb/env/packet_env.sv` |
 | Base sequence | `tb/sequences/packet_base_sequence.sv` |
