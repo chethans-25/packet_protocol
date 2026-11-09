@@ -32,10 +32,10 @@ module tb_top;
 
   always #5 clk = ~clk;
 
-  // The output agent is passive, so the harness keeps the consumer ready.
-  assign read_if.rst   = write_if.rst;
-  assign read_if.rd_en = 1'b1;
-  assign read_if.wr_en = 1'b0;
+  // The active read agent drives rd_en. Unused opposite-direction enables
+  // remain tied low.
+  assign read_if.rst    = write_if.rst;
+  assign read_if.wr_en  = 1'b0;
   assign write_if.rd_en = 1'b0;
 
   initial begin

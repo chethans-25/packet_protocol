@@ -26,7 +26,7 @@ class packet_base_test extends uvm_test;
     write_cfg.vif       = write_vif;
 
     read_cfg = packet_agent_config::type_id::create("read_cfg");
-    read_cfg.is_active = UVM_PASSIVE;
+    read_cfg.is_active = UVM_ACTIVE;
     read_cfg.role      = PACKET_READ_SIDE;
     read_cfg.vif       = read_vif;
 
@@ -40,17 +40,31 @@ class packet_base_test extends uvm_test;
     env = packet_env::type_id::create("env", this);
   endfunction
 
-  // Run a packet sequence. The test objection only covers the time the
-  // sequence is actively sending. The scoreboard raises its own objection
-  // while packets are still in flight, so the run phase stays alive until the
-  // FIFO has drained and every expected packet has been observed.
-  task run_packet_sequence(uvm_phase phase, packet_base_sequence packet_seq);
+  // Run producer and consumer controls concurrently. A custom test can pass a
+  // read sequence that constrains rd_en to create output backpressure.
+  task run_packet_sequences(uvm_phase phase,
+                            packet_base_sequence packet_seq,
+                            packet_read_base_sequence read_seq);
     if (packet_seq == null)
       `uvm_fatal("NULL_SEQUENCE", "Cannot run a null packet sequence")
+    if (read_seq == null)
+      `uvm_fatal("NULL_READ_SEQUENCE", "Cannot run a null read sequence")
 
     packet_seq.packets_sent = 0;
-    phase.raise_objection(this, "driving packet sequence");
-    packet_seq.start(env.write_agent.sequencer);
-    phase.drop_objection(this, "packet sequence finished driving");
+    phase.raise_objection(this, "driving packet and read-control sequences");
+    fork
+      packet_seq.start(env.write_agent.sequencer);
+      read_seq.start(env.read_agent.read_sequencer);
+    join
+    phase.drop_objection(this, "stimulus sequences finished");
+  endtask
+
+  // Preserve the simple API for tests that do not need backpressure. The
+  // ready sequence sets rd_en high and the read driver retains that level.
+  task run_packet_sequence(uvm_phase phase, packet_base_sequence packet_seq);
+    packet_read_ready_sequence ready_seq;
+
+    ready_seq = packet_read_ready_sequence::type_id::create("ready_seq");
+    run_packet_sequences(phase, packet_seq, ready_seq);
   endtask
 endclass

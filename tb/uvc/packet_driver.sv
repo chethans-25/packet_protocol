@@ -1,4 +1,4 @@
-class packet_driver extends uvm_driver #(packet_item);
+class packet_driver extends uvm_driver #(packet_write_item);
   `uvm_component_utils(packet_driver)
 
   packet_agent_config cfg;
@@ -14,49 +14,51 @@ class packet_driver extends uvm_driver #(packet_item);
       `uvm_fatal("NO_CFG", {get_full_name(), ": packet_agent_config was not configured"})
     if (cfg.vif == null)
       `uvm_fatal("NO_VIF", {get_full_name(), ": cfg.vif is null"})
-    if (cfg.is_active != UVM_ACTIVE)
-      `uvm_fatal("PASSIVE_DRIVER",
-                 "packet_driver requires an active agent configuration")
-    if (cfg.role != PACKET_WRITE_SIDE)
-      `uvm_fatal("UNSUPPORTED_ROLE",
-                 "packet_driver currently supports only PACKET_WRITE_SIDE")
+    if (cfg.is_active != UVM_ACTIVE || cfg.role != PACKET_WRITE_SIDE)
+      `uvm_fatal("BAD_WRITE_CFG",
+                 "packet_driver requires an active write-side configuration")
     vif = cfg.vif;
   endfunction
 
   task run_phase(uvm_phase phase);
-    packet_item req;
+    packet_write_item req;
 
-    vif.sop   <= 1'b0;
-    vif.eop   <= 1'b0;
-    vif.valid <= 1'b0;
-    vif.data  <= '0;
-    vif.wr_en <= 1'b0;
+    drive_idle();
 
+    // Poll once per cycle so every request controls exactly one DUT cycle.
+    // When no request is available, drive an idle cycle instead of repeating
+    // the previous valid beat.
     forever begin
-      seq_item_port.get_next_item(req);
-      drive_packet(req);
-      seq_item_port.item_done();
+      @(negedge vif.clk);
+
+      if (vif.rst) begin
+        drive_idle();
+      end else begin
+        req = null;
+        seq_item_port.try_next_item(req);
+        if (req == null) begin
+          drive_idle();
+        end else begin
+          drive_beat(req);
+          seq_item_port.item_done();
+        end
+      end
     end
   endtask
 
-  task drive_packet(packet_item pkt);
-    while (vif.rst)
-      @(negedge vif.clk);
+  function void drive_beat(packet_write_item item);
+    vif.sop   <= item.sop;
+    vif.eop   <= item.eop;
+    vif.valid <= item.valid;
+    vif.data  <= item.data;
+    vif.wr_en <= item.wr_en;
+  endfunction
 
-    foreach (pkt.payload[i]) begin
-      @(negedge vif.clk);
-      vif.sop   <= (i == 0);
-      vif.eop   <= (i == pkt.payload.size()-1);
-      vif.valid <= 1'b1;
-      vif.data  <= pkt.payload[i];
-      vif.wr_en <= 1'b1;
-    end
-
-    @(negedge vif.clk);
+  function void drive_idle();
     vif.sop   <= 1'b0;
     vif.eop   <= 1'b0;
     vif.valid <= 1'b0;
     vif.data  <= '0;
     vif.wr_en <= 1'b0;
-  endtask
+  endfunction
 endclass
