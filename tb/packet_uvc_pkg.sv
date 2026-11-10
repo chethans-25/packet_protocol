@@ -16,8 +16,10 @@ package packet_uvc_pkg;
   `include "env/packet_env.sv"
   `include "sequences/packet_base_sequence.sv"
   `include "sequences/packet_random_sequence.sv"
+  `include "sequences/packet_wr_en_variation_sequence.sv"
   `include "sequences/packet_read_base_sequence.sv"
   `include "sequences/packet_read_ready_sequence.sv"
   `include "tests/packet_base_test.sv"
   `include "tests/packet_random_test.sv"
+  `include "tests/packet_wr_en_variation_test.sv"
 endpackage
