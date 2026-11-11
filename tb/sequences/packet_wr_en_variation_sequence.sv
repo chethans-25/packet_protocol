@@ -1,7 +1,18 @@
 class packet_wr_en_variation_sequence extends packet_base_sequence;
   `uvm_object_utils(packet_wr_en_variation_sequence)
 
+  rand bit random_wr_en;
+
+  int unsigned wr_en_low_weight  = 40;
+  int unsigned wr_en_high_weight = 60;
   int unsigned wr_en_low_cycles;
+
+  constraint c_random_wr_en {
+    random_wr_en dist {
+      1'b0 := wr_en_low_weight,
+      1'b1 := wr_en_high_weight
+    };
+  }
 
   function new(string name = "packet_wr_en_variation_sequence");
     super.new(name);
@@ -14,7 +25,6 @@ class packet_wr_en_variation_sequence extends packet_base_sequence;
                                      int unsigned packet_index);
     packet_write_item beat;
     int unsigned middle_index;
-    bit random_wr_en;
 
     if (packet == null)
       `uvm_fatal("NULL_PACKET", "Cannot send a null packet")
@@ -25,7 +35,8 @@ class packet_wr_en_variation_sequence extends packet_base_sequence;
     middle_index = $urandom_range(packet.payload.size()-2, 1);
 
     foreach (packet.payload[i]) begin
-      random_wr_en = $urandom_range(1, 0);
+      if (!this.randomize(random_wr_en))
+        `uvm_fatal("RANDOMIZE", "Could not randomize wr_en")
 
       // Guarantee that wr_en changes in the interior of every packet while
       // retaining random stalls at any other beat.
