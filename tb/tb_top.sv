@@ -51,7 +51,7 @@ module tb_top;
     uvm_config_db#(virtual packet_if)::set(
       null, "uvm_test_top", "read_vif", read_if
     );
-    run_test("packet_wr_en_variation_test");
+    run_test("packet_rd_en_variation_test");
   end
 
   initial begin
