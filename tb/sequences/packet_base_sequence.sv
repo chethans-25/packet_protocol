@@ -29,12 +29,19 @@ class packet_base_sequence extends uvm_sequence #(packet_write_item);
 
     foreach (packet.payload[i]) begin
       beat = packet_write_item::type_id::create($sformatf("beat_%0d", i));
-      beat.sop   = (i == 0);
-      beat.eop   = (i == packet.payload.size()-1);
-      beat.valid = 1'b1;
-      beat.wr_en = 1'b1;
-      beat.data  = packet.payload[i];
-      send_write_beat(beat);
+
+      // Obtain the sequencer grant before randomizing the item. Constrain the
+      // protocol fields while allowing any future unconstrained fields to vary.
+      start_item(beat);
+      if (!beat.randomize() with {
+            sop   == (i == 0);
+            eop   == (i == packet.payload.size() - 1);
+            valid == 1'b1;
+            wr_en == 1'b1;
+            data  == packet.payload[i];
+          })
+        `uvm_fatal("RANDOMIZE", "Could not randomize write beat")
+      finish_item(beat);
     end
 
     packets_sent++;
